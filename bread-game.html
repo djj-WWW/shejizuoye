@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>豪士降临 🍞</title>
+
+<!-- MediaPipe Face Mesh -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #050d1a;
+    color: #fff;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
+    width: 100dvw;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* 安全区域适配 iPhone X+ */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #game-container {
+    position: relative;
+    /* 容器填满可用空间，保持 9:16 比例 */
+    width: min(100dvw, 100dvh * 9 / 16);
+    height: min(100dvh, 100dvw * 16 / 9);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(60, 140, 255, 0.35);
+  }
+
+  #input-video {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #game-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+
+  /* 开始界面 */
+  #start-screen {
+    position: absolute; inset: 0;
+    background: linear-gradient(160deg, #061428cc 0%, #0a1a3acc 100%);
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(12px, 2.5vh, 20px);
+    z-index: 100;
+    text-align: center;
+    padding: clamp(16px, 3vh, 24px);
+  }
+
+  #start-screen h1 {
+    font-size: clamp(22px, 5vw, 36px);
+    font-weight: 900;
+    background: linear-gradient(135deg, #E8C97A, #D4A843, #1a7fe8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 2px;
+  }
+
+  .bread-emoji-big {
+    width: clamp(100px, 25vw, 160px);
+    height: auto;
+    animation: bounce 1.2s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(60, 140, 255, 0.7));
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-12px) scale(1.08); }
+  }
+
+  .subtitle { color: #b8c8e0; font-size: clamp(13px, 3vw, 16px); max-width: 320px; line-height: 1.6; }
+
+  .hint-box {
+    background: rgba(60,140,255,0.1);
+    border: 1px solid rgba(60,140,255,0.35);
+    border-radius: 12px;
+    padding: 12px 20px;
+    color: #E8C97A;
+    font-size: clamp(12px, 2.5vw, 14px);
+    max-width: 320px;
+    line-height: 1.7;
+  }
+
+  #start-btn {
+    background: linear-gradient(135deg, #1a7fe8, #0a4fa8);
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: clamp(12px, 2vh, 16px) clamp(32px, 8vw, 48px);
+    font-size: clamp(15px, 4vw, 20px);
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 20px rgba(26, 127, 232, 0.55);
+    transition: transform 0.15s, box-shadow 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #start-btn:hover { transform: scale(1.06); box-shadow: 0 6px 28px rgba(26,127,232,0.75); }
+  #start-btn:active { transform: scale(0.96); }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: clamp(8px, 2vh, 16px) clamp(12px, 3vw, 16px);
+    padding-top: max(clamp(8px, 2vh, 16px), env(safe-area-inset-top));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(to bottom, rgba(5,13,26,0.7) 0%, transparent 100%);
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  .hud-score {
+    font-size: clamp(16px, 4vw, 22px);
+    font-weight: 900;
+    color: #E8C97A;
+    text-shadow: 0 0 10px rgba(232, 201, 122, 0.6);
+    letter-spacing: 1px;
+  }
+
+  .hud-lives {
+    height: 32px;
+    width: auto;
+    filter: drop-shadow(0 0 6px rgba(60,140,255,0.6));
+  }
+
+  .hud-hint {
+    position: absolute; bottom: 12px; left: 0; right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: rgba(184,200,224,0.6);
+    pointer-events: none;
+    z-index: 50;
+  }
+
+  /* 嘴部指示器 */
+  #mouth-indicator {
+    position: absolute; top: clamp(50px, 9vh, 70px); left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    background: rgba(5,13,26,0.6);
+    z-index: 50;
+    pointer-events: none;
+    transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  #mouth-indicator.open {
+    color: #E8C97A;
+    background: rgba(60,140,255,0.35);
+    box-shadow: 0 0 12px rgba(60,140,255,0.6);
+  }
+  #mouth-indicator.closed {
+    color: rgba(184,200,224,0.55);
+    background: rgba(5,13,26,0.5);
+  }
+
+  /* 游戏结束 */
+  #gameover-screen {
+    position: absolute; inset: 0;
+    background: rgba(5,13,26,0.82);
+    backdrop-filter: blur(6px);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 100;
+    text-align: center;
+  }
+  #gameover-screen h2 {
+    font-size: clamp(28px, 7vw, 48px);
+    font-weight: 900;
+    color: #5aafff;
+    text-shadow: 0 0 20px rgba(60,140,255,0.6);
+  }
+  .final-score {
+    font-size: clamp(20px, 5vw, 32px);
+    color: #E8C97A;
+    font-weight: 700;
+  }
+  #restart-btn {
+    background: linear-gradient(135deg, #1a7fe8, #0a4fa8);
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: clamp(12px, 2vh, 16px) clamp(32px, 8vw, 44px);
+    font-size: clamp(15px, 4vw, 20px);
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(26,127,232,0.45);
+    letter-spacing: 1px;
+    transition: transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #restart-btn:hover { transform: scale(1.07); }
+  #restart-btn:active { transform: scale(0.96); }
+
+  /* 静音按钮 */
+  #mute-btn {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(5,13,26,0.75);
+    border: 1.5px solid rgba(60,140,255,0.35);
+    color: #b8c8e0;
+    font-size: 22px;
+    cursor: pointer;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #mute-btn:hover { background: rgba(60,140,255,0.2); border-color: rgba(60,140,255,0.6); }
+  #mute-btn:active { background: rgba(60,140,255,0.3); }
+  #mute-btn.muted { color: rgba(184,200,224,0.4); border-color: rgba(184,200,224,0.15); }
+
+  /* 开始界面静音按钮 */
+  #start-mute-btn {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(5,13,26,0.75);
+    border: 1.5px solid rgba(60,140,255,0.35);
+    color: #b8c8e0;
+    font-size: 22px;
+    cursor: pointer;
+    z-index: 101;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #start-mute-btn:hover { background: rgba(60,140,255,0.2); border-color: rgba(60,140,255,0.6); }
+  #start-mute-btn:active { background: rgba(60,140,255,0.3); }
+  #start-mute-btn.muted { color: rgba(184,200,224,0.4); border-color: rgba(184,200,224,0.15); }
+
+  /* 加载提示 */
+  #loading-msg {
+    position: absolute; inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 90;
+    background: rgba(5,13,26,0.9);
+    color: #b8c8e0;
+    font-size: 15px;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid rgba(60,140,255,0.2);
+    border-top-color: #5aafff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 错误提示 */
+  #error-msg {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 200;
+    background: rgba(5,13,26,0.97);
+    padding: 24px;
+    text-align: center;
+  }
+  #error-msg h3 { color: #5aafff; font-size: 20px; }
+  #error-msg p  { color: #b8c8e0; font-size: 14px; line-height: 1.7; max-width: 300px; }
+  #error-msg ul { color: #8aaac8; font-size: 13px; line-height: 2; list-style: disc; text-align: left; max-width: 280px; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <video id="input-video" playsinline muted autoplay></video>
+  <canvas id="game-canvas"></canvas>
+  <audio id="bgm" src="bgm.mp3?v=2" loop preload="auto"></audio>
+
+  <div id="loading-msg">
+    <div class="spinner"></div>
+    <span id="loading-text">正在加载 AI 面部识别模型…</span>
+  </div>
+
+  <div id="error-msg">
+    <div style="font-size:48px;">📷❌</div>
+    <h3>摄像头初始化失败</h3>
+    <p>无法启动摄像头，请检查以下几点：</p>
+    <ul>
+      <li>请确保在 <b>HTTPS</b> 或 <b>localhost</b> 下打开</li>
+      <li>浏览器已授权摄像头权限</li>
+      <li>没有其他应用占用摄像头</li>
+      <li>使用最新版 Chrome / Edge / Firefox</li>
+    </ul>
+    <p id="error-detail" style="color:#ff9999;font-size:12px;margin-top:8px;"></p>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" style="display:none;">
+    <div class="hud-score">🍞 <span id="score-val">0</span></div>
+    <canvas id="lives-canvas" class="hud-lives"></canvas>
+  </div>
+
+  <div id="mouth-indicator" class="closed" style="display:none;">😐 闭嘴中</div>
+  <div class="hud-hint" id="hud-hint" style="display:none;">张嘴对准面包，吃掉它们！</div>
+
+  <div id="start-screen">
+    <img id="start-bread-img" src="start-bread.png" alt="豪士面包" class="bread-emoji-big">
+    <h1>豪士降临</h1>
+    <p class="subtitle">用你的嘴巴吃掉从天而降的面包！</p>
+    <div class="hint-box">
+      👄 对准面包 → 张大嘴 → 吃掉！<br>
+      📷 需要摄像头权限<br>
+      🏆 吃掉越多，分数越高！
+    </div>
+    <button id="start-btn">开吃开吃 🍞</button>
+    <button id="start-mute-btn" title="静音">🔊</button>
+  </div>
+
+  <div id="gameover-screen">
+    <div style="font-size:48px;">😋</div>
+    <h2>游戏结束！</h2>
+    <div class="final-score">最终得分：<span id="final-score-val">0</span></div>
+    <div style="color:#aaa;font-size:14px;">吃掉了 <span id="final-ate-val">0</span> 个面包</div>
+    <button id="restart-btn">再来一次 🔄</button>
+  </div>
+  <button id="mute-btn" title="静音">🔊</button>
+</div>
+
+<script>
+/* ============================================================
+   全局常量
+   ============================================================ */
+const CANVAS_W = 360;
+const CANVAS_H = 640;
+const MAX_BREADS = 9;
+const BREAD_SIZE = 120;
+const BREAD_HALF = BREAD_SIZE / 2;
+const SPAWN_MIN_MS = 500;
+const SPAWN_MAX_MS = 1100;
+const BASE_SPEED = 2.4;
+const SPEED_INC  = 0.0005;
+const MOUTH_OPEN_RATIO = 0.18; // 张嘴阈值
+const COLLISION_RADIUS = 50;
+const MAX_LIVES = 3;
+
+const YUMMY_TEXTS = ['好吃！','咔嚓！','咕嘟！','太香了！','美味！','又一个！','666！'];
+
+// 预加载4张豪士面包产品图
+const BREAD_IMAGES = [];
+const BREAD_IMG_PATHS = ['bread1.png', 'bread2.png', 'bread3.png', 'bread4.png'];
+for (const path of BREAD_IMG_PATHS) {
+  const img = new Image();
+  img.src = path;
+  BREAD_IMAGES.push(img);
+}
+
+// 生命面包图标
+const LIFE_BAR_IMG = new Image();
+LIFE_BAR_IMG.src = 'life-bar.png';
+
+// 帽子图片
+const HAT_IMG = new Image();
+HAT_IMG.src = 'hat.png';
+
+const $  = id => document.getElementById(id);
+const cv = $('game-canvas');
+const ct = cv.getContext('2d');
+
+let gameState   = 'idle'; // idle | loading | ready | running | gameover
+let score       = 0;
+let lives       = MAX_LIVES;
+let ateCount    = 0;
+let frameCount  = 0;
+let lastSpawnMs = 0;
+let nextSpawnMs = 900;
+
+let breads     = [];
+let floatTexts = [];
+let particles  = [];
+let eatAnim    = [];
+
+// 面部检测结果（由 FaceMesh 回调持续更新）
+let latestMouth = {
+  open: false,
+  cx: -999, cy: -999,
+  ratio: 0,
+  hasFace: false,
+  headX: -999, headY: -999,  // 头顶位置（用于画帽子）
+  headSize: 0                 // 头部大小估算
+};
+
+let faceMeshReady = false;
+let audioCtx = null;
+
+// 背景音乐
+const bgm = $('bgm');
+let isMuted = false;
+
+function toggleMute() {
+  isMuted = !isMuted;
+  if (isMuted) {
+    bgm.volume = 0;
+    $('mute-btn').textContent = '🔇';
+    $('mute-btn').classList.add('muted');
+    $('start-mute-btn').textContent = '🔇';
+    $('start-mute-btn').classList.add('muted');
+  } else {
+    bgm.volume = 0.5;
+    $('mute-btn').textContent = '🔊';
+    $('mute-btn').classList.remove('muted');
+    $('start-mute-btn').textContent = '🔊';
+    $('start-mute-btn').classList.remove('muted');
+  }
+}
+
+/* ============================================================
+   Canvas 尺寸
+   ============================================================ */
+function resizeCanvas() {
+  // Canvas 内部始终 360×640，CSS 自动缩放填充容器
+  cv.width  = CANVAS_W;
+  cv.height = CANVAS_H;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const CW = () => CANVAS_W;
+const CH = () => CANVAS_H;
+
+/* ============================================================
+   Web Audio 音效
+   ============================================================ */
+function initAudio() {
+  try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
+}
+
+function playEatSound() {
+  if (!audioCtx) return;
+  const idx = ateCount;
+  // 根据吃到的数量循环切换不同音效
+  if      (idx === 2)  playSoundCrunch();
+  else if (idx === 5)  playSoundGulp();
+  else if (idx === 8)  playSoundYummy();
+  else if (idx === 10) playSoundWow();
+  else if (idx === 11) playSoundDing();
+  else if (idx === 15) playSoundSlurp();
+  else if (idx === 18) playSoundPop();
+  else if (idx === 20) playSoundFanfare();
+  else if (idx > 20)   playSoundCycle(idx);  // 20之后循环
+  else                 playSoundBite();       // 默认咬合音效
+}
+
+/* ── 音效库 ── */
+function playTone(freqs, types, times, gains, durations) {
+  try {
+    const t = audioCtx.currentTime;
+    for (let i = 0; i < freqs.length; i++) {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = types[i] || 'sine';
+      o.frequency.setValueAtTime(freqs[i], t + times[i][0]);
+      o.frequency.exponentialRampToValueAtTime(freqs[i] * 0.3, t + times[i][1]);
+      g.gain.setValueAtTime(gains[i][0], t + times[i][0]);
+      g.gain.exponentialRampToValueAtTime(0.001, t + times[i][0] + durations[i]);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t + times[i][0]); o.stop(t + times[i][0] + durations[i] + 0.05);
+    }
+  } catch(e){}
+}
+
+function playSoundBite() {
+  playTone(
+    [900], ['triangle'], [[0, 0.06]], [[0.35]], [0.1]
+  );
+}
+
+function playSoundCrunch() {
+  playTone(
+    [600, 1200, 400], ['sawtooth','square','triangle'],
+    [[0,0.05],[0.03,0.04],[0.05,0.06]],
+    [[0.25],[0.2],[0.18]],
+    [0.08,0.08,0.08]
+  );
+}
+
+function playSoundGulp() {
+  playTone(
+    [300, 200], ['sine','triangle'],
+    [[0,0.15],[0.08,0.2]],
+    [[0.35],[0.25]],
+    [0.2,0.25]
+  );
+}
+
+function playSoundYummy() {
+  playTone(
+    [500, 700, 900], ['sine','sine','sine'],
+    [[0,0.08],[0.08,0.08],[0.16,0.08]],
+    [[0.22],[0.22],[0.22]],
+    [0.1,0.1,0.1]
+  );
+}
+
+function playSoundWow() {
+  playTone(
+    [400, 600, 800, 1000], ['triangle','triangle','triangle','triangle'],
+    [[0,0.06],[0.06,0.06],[0.12,0.06],[0.18,0.06]],
+    [[0.2],[0.2],[0.2],[0.2]],
+    [0.08,0.08,0.08,0.08]
+  );
+}
+
+function playSoundDing() {
+  playTone(
+    [1200, 1600], ['sine','sine'],
+    [[0,0.03],[0.04,0.03]],
+    [[0.3],[0.25]],
+    [0.06,0.06]
+  );
+}
+
+function playSoundSlurp() {
+  playTone(
+    [800, 400, 200], ['sawtooth','sawtooth','triangle'],
+    [[0,0.06],[0.05,0.08],[0.08,0.12]],
+    [[0.18],[0.15],[0.12]],
+    [0.08,0.1,0.15]
+  );
+}
+
+function playSoundPop() {
+  playTone(
+    [1500, 800], ['square','triangle'],
+    [[0,0.02],[0.02,0.03]],
+    [[0.3],[0.2]],
+    [0.04,0.05]
+  );
+}
+
+function playSoundFanfare() {
+  playTone(
+    [523, 659, 784, 1047], ['sine','sine','sine','sine'],
+    [[0,0.15],[0.1,0.15],[0.2,0.15],[0.3,0.2]],
+    [[0.25],[0.25],[0.25],[0.3]],
+    [0.18,0.18,0.18,0.25]
+  );
+}
+
+// 20之后循环前面8种音效
+const CYCLE_SOUNDS = [playSoundCrunch, playSoundGulp, playSoundYummy, playSoundWow, playSoundDing, playSoundSlurp, playSoundPop, playSoundFanfare];
+function playSoundCycle(idx) {
+  const i = (idx - 21) % CYCLE_SOUNDS.length;
+  CYCLE_SOUNDS[i]();
+}
+
+/* ============================================================
+   MediaPipe Face Mesh
+   ============================================================ */
+let faceMesh = null;
+let camera   = null;
+const vid = $('input-video');
+
+function initFaceMesh() {
+  $('loading-msg').style.display = 'flex';
+  $('loading-text').textContent = '正在加载 AI 面部识别模型…';
+
+  faceMesh = new FaceMesh({
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.4
+  });
+
+  faceMesh.onResults(onResults);
+
+  camera = new Camera(vid, {
+    onFrame: async () => {
+      // 始终送帧给 FaceMesh，不管游戏状态
+      await faceMesh.send({ image: vid });
+    },
+    width: CANVAS_W,
+    height: CANVAS_H,
+    facingMode: 'user'
+  });
+
+  camera.start()
+    .then(() => {
+      faceMeshReady = true;
+      $('loading-msg').style.display = 'none';
+      gameState = 'ready';
+      // 开始后台渲染循环（在 ready 状态只画摄像头+嘴标记，不生成面包）
+      requestAnimationFrame(bgLoop);
+      $('start-screen').style.display = 'flex';
+    })
+    .catch(err => {
+      console.error(err);
+      showError(err);
+    });
+}
+
+function onResults(results) {
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    latestMouth.open    = false;
+    latestMouth.hasFace = false;
+    latestMouth.cx      = -999;
+    latestMouth.cy      = -999;
+    latestMouth.ratio   = 0;
+    latestMouth.headX   = -999;
+    latestMouth.headY   = -999;
+    latestMouth.headSize = 0;
+    return;
+  }
+
+  const lm  = results.multiFaceLandmarks[0];
+  const cw  = CW();
+  const ch  = CH();
+  if (cw <= 0 || ch <= 0) return;
+
+  // 嘴部关键点（MediaPipe Face Mesh 468 landmarks）
+  const up    = lm[13];   // 上唇中
+  const lo    = lm[14];   // 下唇中
+  const lc    = lm[61];   // 嘴角左
+  const rc    = lm[291];  // 嘴角右
+
+  const dy = Math.abs(up.y - lo.y);
+  const dx = Math.abs(lc.x - rc.x);
+  const ratio = dx > 0.001 ? dy / dx : 0;
+
+  latestMouth.open    = ratio > MOUTH_OPEN_RATIO;
+  latestMouth.ratio   = ratio;
+  latestMouth.hasFace = true;
+
+  // 嘴中心（MediaPipe 坐标归一化 0..1，x 轴镜像处理）
+  const midX = (up.x + lo.x) / 2;
+  const midY = (up.y + lo.y) / 2;
+  latestMouth.cx = (1 - midX) * cw;
+  latestMouth.cy = midY * ch;
+
+  // 头顶位置（landmark 10）+ 下巴（landmark 152）估算头部大小
+  const top = lm[10];     // 头顶
+  const chin = lm[152];   // 下巴底
+  const headH = Math.abs(top.y - chin.y) * ch;
+  latestMouth.headSize = headH;
+  // 帽子放在头顶上方一点（x 镜像）
+  latestMouth.headX = (1 - top.x) * cw;
+  latestMouth.headY = top.y * ch - headH * 0.6;
+}
+
+/* ============================================================
+   后台循环（ready 状态也跑，用来画摄像头和嘴部标记）
+   ============================================================ */
+function bgLoop() {
+  if (gameState === 'idle' || gameState === 'loading') {
+    requestAnimationFrame(bgLoop);
+    return;
+  }
+  if (gameState === 'ready') {
+    drawBgFrame();
+    requestAnimationFrame(bgLoop);
+  }
+  // running 状态下由 gameLoop 接管绘制
+}
+
+function drawBgFrame() {
+  const cw = CW(), ch = CH();
+  ct.clearRect(0, 0, cw, ch);
+
+  // 摄像头画面（镜像）
+  if (faceMeshReady && vid.readyState >= 2) {
+    ct.save();
+    ct.translate(cw, 0);
+    ct.scale(-1, 1);
+    ct.drawImage(vid, 0, 0, cw, ch);
+    ct.restore();
+  } else {
+    ct.fillStyle = '#111'; ct.fillRect(0, 0, cw, ch);
+  }
+
+  // 暗色遮罩
+  ct.fillStyle = 'rgba(5,13,30,0.2)';
+  ct.fillRect(0, 0, cw, ch);
+
+  // 帽子
+  drawHat();
+
+  // 嘴部标记
+  drawMouthMarker(ct);
+}
+
+/* ============================================================
+   游戏逻辑
+   ============================================================ */
+function startGame() {
+  score = 0; lives = MAX_LIVES; ateCount = 0;
+  frameCount = 0; lastSpawnMs = 0; nextSpawnMs = 900;
+  breads = []; floatTexts = []; particles = []; eatAnim = [];
+
+  $('score-val').textContent = '0';
+  updateLivesDisplay();
+
+  $('start-screen').style.display    = 'none';
+  $('gameover-screen').style.display = 'none';
+  $('hud').style.display             = 'flex';
+  $('mouth-indicator').style.display = 'block';
+  $('hud-hint').style.display        = 'block';
+
+  gameState = 'running';
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameState = 'gameover';
+  $('final-score-val').textContent = score;
+  $('final-ate-val').textContent   = ateCount;
+  $('gameover-screen').style.display = 'flex';
+  $('mouth-indicator').style.display = 'none';
+  $('hud-hint').style.display        = 'none';
+}
+
+function updateLivesDisplay() {
+  const lc = $('lives-canvas');
+  const img = LIFE_BAR_IMG;
+  if (!img || !img.complete) return;
+
+  // 按图片原始比例计算尺寸
+  const ratio = img.naturalWidth / img.naturalHeight;
+  const iconH = 36;
+  const iconW = iconH * ratio;
+  const spacing = iconW + 8;
+  const padding = 4;
+  const w = padding * 2 + MAX_LIVES * spacing;
+  const h = iconH + padding * 2;
+
+  lc.width = w;
+  lc.height = h;
+  const lct = lc.getContext('2d');
+  lct.clearRect(0, 0, w, h);
+
+  for (let i = 0; i < MAX_LIVES; i++) {
+    const cx = padding + i * spacing + iconW / 2;
+    const cy = padding + iconH / 2;
+
+    lct.save();
+    lct.translate(cx, cy);
+
+    if (i >= lives) {
+      // 丢失：灰色半透明
+      lct.globalAlpha = 0.2;
+    }
+
+    // 轻微倾斜，角度交错（-6° / +6°）
+    const angle = (i % 2 === 0 ? -0.1 : 0.1);
+    lct.rotate(angle);
+
+    lct.drawImage(img, -iconW / 2, -iconH / 2, iconW, iconH);
+
+    lct.restore();
+  }
+  lct.globalAlpha = 1;
+}
+
+/* ── 面包 ── */
+function spawnBread() {
+  const cw = CW();
+  const x  = BREAD_HALF + Math.random() * (cw - BREAD_SIZE);
+  const boost = 1 + frameCount * SPEED_INC;
+  breads.push({
+    id: Math.random().toString(36).slice(2),
+    x, y: -BREAD_HALF,
+    speed: BASE_SPEED * boost,
+    imgIdx: Math.floor(Math.random() * BREAD_IMAGES.length),
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpd: 0.03 + Math.random() * 0.03,
+    rot: 0,
+    rotSpd: (Math.random() - 0.5) * 0.015,
+  });
+}
+
+function updateBreads() {
+  const ch = CH();
+  const cw = CW();
+  const now = performance.now();
+
+  if (breads.length < MAX_BREADS && now - lastSpawnMs > nextSpawnMs) {
+    spawnBread();
+    lastSpawnMs = now;
+    nextSpawnMs = SPAWN_MIN_MS + Math.random() * (SPAWN_MAX_MS - SPAWN_MIN_MS);
+    nextSpawnMs = Math.max(350, nextSpawnMs - frameCount * 0.08);
+  }
+
+  const mouthOpenNow = latestMouth.open && latestMouth.hasFace;
+  const mouthX = latestMouth.cx;
+  const mouthY = latestMouth.cy;
+  const toRemove = [];
+
+  for (let i = 0; i < breads.length; i++) {
+    const b = breads[i];
+    b.y    += b.speed;
+    b.wobble += b.wobbleSpd;
+    b.rot  += b.rotSpd;
+    b.x    += Math.sin(b.wobble) * 0.6;
+    b.x     = Math.max(BREAD_HALF, Math.min(cw - BREAD_HALF, b.x));
+
+    // 张嘴碰撞检测
+    if (mouthOpenNow && mouthX > 0 && mouthY > 0) {
+      const dx = b.x - mouthX;
+      const dy = b.y - mouthY;
+      if (Math.sqrt(dx*dx + dy*dy) < COLLISION_RADIUS) {
+        toRemove.push(i);
+        eatBread(b);
+        continue;
+      }
+    }
+
+    if (b.y > ch + BREAD_HALF) {
+      toRemove.push(i);
+      loseLife();
+    }
+  }
+
+  for (let i = toRemove.length - 1; i >= 0; i--) {
+    breads.splice(toRemove[i], 1);
+  }
+}
+
+function eatBread(b) {
+  score += 10; ateCount++;
+  $('score-val').textContent = score;
+  playEatSound();
+  spawnFloatText(b.x, b.y, YUMMY_TEXTS[Math.floor(Math.random() * YUMMY_TEXTS.length)]);
+  spawnParticles(b.x, b.y);
+  eatAnim.push({ x: b.x, y: b.y, t: 0, imgIdx: b.imgIdx });
+}
+
+function loseLife() {
+  if (lives <= 0) return;
+  lives--;
+  updateLivesDisplay();
+  if (lives <= 0) setTimeout(endGame, 300);
+}
+
+/* ── 特效 ── */
+function spawnFloatText(x, y, text) {
+  floatTexts.push({ x, y, text, t: 0, vy: -2.5 });
+}
+
+function updateFloatTexts() {
+  for (let i = floatTexts.length - 1; i >= 0; i--) {
+    const f = floatTexts[i];
+    f.t += 0.03; f.y += f.vy; f.vy *= 0.96;
+    if (f.t >= 1) floatTexts.splice(i, 1);
+  }
+}
+
+function spawnParticles(x, y) {
+  const n = 10 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 2 + Math.random() * 5;
+    particles.push({
+      x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 2,
+      size: 3 + Math.random() * 5,
+      // 随机在蓝色(200-220)和麦色(40-50)之间切换
+      color: Math.random() > 0.5
+        ? `hsl(${205+Math.random()*20},90%,${60+Math.random()*20}%)`
+        : `hsl(${40+Math.random()*10},90%,${60+Math.random()*15}%)`,
+      t: 0, life: 0.5 + Math.random() * 0.4
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.t += 0.04; p.x += p.vx; p.y += p.vy;
+    p.vy += 0.15; p.vx *= 0.97;
+    if (p.t >= p.life) particles.splice(i, 1);
+  }
+}
+
+/* ============================================================
+   绘制
+   ============================================================ */
+function drawFrame() {
+  const cw = CW(), ch = CH();
+  ct.clearRect(0, 0, cw, ch);
+
+  // 1. 摄像头（镜像）
+  if (faceMeshReady && vid.readyState >= 2) {
+    ct.save(); ct.translate(cw, 0); ct.scale(-1, 1);
+    ct.drawImage(vid, 0, 0, cw, ch);
+    ct.restore();
+  } else {
+    ct.fillStyle = '#111'; ct.fillRect(0, 0, cw, ch);
+  }
+
+  // 2. 遮罩
+  ct.fillStyle = 'rgba(5,13,30,0.22)';
+  ct.fillRect(0, 0, cw, ch);
+
+  // 3. 帽子（戴在头上）
+  drawHat();
+
+  // 4. 面包
+  drawBreads();
+
+  // 5. 粒子
+  drawParticles();
+
+  // 6. 浮动文字
+  drawFloatTexts();
+
+  // 7. 吃掉动画
+  drawEatAnims();
+
+  // 8. 嘴部标记
+  drawMouthMarker(ct);
+
+  // 9. 嘴部状态 UI
+  const mi = $('mouth-indicator');
+  if (latestMouth.open) {
+    mi.textContent = '😮 张嘴中！';
+    mi.className = 'open';
+  } else {
+    mi.textContent = '😐 闭嘴中';
+    mi.className = 'closed';
+  }
+}
+
+function drawBreads() {
+  for (const b of breads) {
+    const img = BREAD_IMAGES[b.imgIdx];
+    if (!img || !img.complete) continue;
+
+    ct.save();
+    ct.translate(b.x, b.y);
+    ct.rotate(b.rot);
+
+    // 阴影
+    ct.shadowColor = 'rgba(0,0,0,0.35)';
+    ct.shadowBlur = 8;
+
+    // 绘制产品图片（保持比例居中）
+    ct.drawImage(img, -BREAD_SIZE / 2, -BREAD_SIZE / 2, BREAD_SIZE, BREAD_SIZE);
+
+    ct.shadowBlur = 0;
+    ct.restore();
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const a = 1 - p.t / p.life;
+    ct.save(); ct.globalAlpha = a;
+    ct.fillStyle = p.color; ct.shadowColor = p.color; ct.shadowBlur = 8;
+    ct.beginPath(); ct.arc(p.x, p.y, p.size*(1-p.t/p.life*0.5), 0, Math.PI*2); ct.fill();
+    ct.restore();
+  }
+}
+
+function drawFloatTexts() {
+  const fs = 34;
+  for (const f of floatTexts) {
+    const a = 1 - f.t;
+    ct.save(); ct.globalAlpha = a;
+    ct.font = `bold ${fs}px "Segoe UI Emoji", sans-serif`;
+    ct.textAlign='center'; ct.textBaseline='middle';
+    const g = ct.createLinearGradient(f.x-40, f.y, f.x+40, f.y);
+    g.addColorStop(0,'#E8C97A'); g.addColorStop(0.5,'#5aafff'); g.addColorStop(1,'#1a7fe8');
+    ct.fillStyle = g; ct.strokeStyle = 'rgba(0,0,0,0.7)'; ct.lineWidth = 3;
+    ct.strokeText(f.text, f.x, f.y); ct.fillText(f.text, f.x, f.y);
+    ct.restore();
+  }
+}
+
+function drawEatAnims() {
+  for (let i = eatAnim.length - 1; i >= 0; i--) {
+    const e = eatAnim[i]; e.t += 0.08;
+    if (e.t >= 1) { eatAnim.splice(i,1); continue; }
+    const sc = e.t < 0.3 ? 1 + e.t * 2 : Math.max(0, 1.6 - e.t * 2);
+    const a = Math.max(0, 1 - e.t);
+    const bs = BREAD_SIZE * sc;
+
+    const img = BREAD_IMAGES[e.imgIdx];
+    if (!img || !img.complete) continue;
+
+    ct.save();
+    ct.globalAlpha = a;
+    ct.translate(e.x, e.y);
+    ct.rotate(e.t * 1.2);
+
+    ct.shadowColor = 'rgba(255,200,0,0.5)';
+    ct.shadowBlur = 12;
+
+    ct.drawImage(img, -bs/2, -bs/2, bs, bs);
+
+    ct.restore();
+  }
+}
+
+function drawMouthMarker(ctx) {
+  if (!latestMouth.hasFace || latestMouth.cx < 0) return;
+  const r = COLLISION_RADIUS;
+  ctx.save();
+  ctx.strokeStyle = latestMouth.open
+    ? 'rgba(60,160,255,0.85)'
+    : 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(latestMouth.cx, latestMouth.cy, r, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ── 帽子 ── */
+function drawHat() {
+  if (!latestMouth.hasFace || latestMouth.headX < 0) return;
+  const img = HAT_IMG;
+  if (!img || !img.complete) return;
+
+  const size = latestMouth.headSize * 1.15; // 帽子略大于头部
+  const hw = size * 0.5;
+
+  ct.save();
+  ct.translate(latestMouth.headX, latestMouth.headY);
+
+  // 微微倾斜，跟随头部动作
+  ct.shadowColor = 'rgba(0,0,0,0.3)';
+  ct.shadowBlur = 6;
+
+  ct.drawImage(img, -hw, -size * 0.45, size, size);
+
+  ct.restore();
+}
+
+/* ============================================================
+   游戏主循环
+   ============================================================ */
+let lastTime = 0;
+
+function gameLoop(ts) {
+  if (gameState !== 'running') return;
+  lastTime = lastTime || ts;
+  frameCount++;
+
+  updateBreads();
+  updateFloatTexts();
+  updateParticles();
+  drawFrame();
+
+  requestAnimationFrame(gameLoop);
+}
+
+/* ============================================================
+   错误 & 事件
+   ============================================================ */
+function showError(err) {
+  $('loading-msg').style.display = 'none';
+  $('start-screen').style.display = 'none';
+  $('error-msg').style.display = 'flex';
+  if (err && err.message) $('error-detail').textContent = '错误详情：' + err.message;
+}
+
+$('start-btn').addEventListener('click', () => {
+  if (!audioCtx) initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  startGame();
+});
+
+$('restart-btn').addEventListener('click', () => {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  startGame();
+});
+
+// 静音按钮
+$('mute-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMute();
+});
+
+$('start-mute-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMute();
+});
+
+// 页面加载时自动播放背景音乐
+function playBgm() {
+  bgm.volume = 0.5;
+  bgm.play().catch(() => {
+    // 浏览器可能阻止自动播放，点击任意位置后重试
+    const resume = () => {
+      bgm.play().catch(() => {});
+      document.removeEventListener('click', resume);
+    };
+    document.addEventListener('click', resume, { once: true });
+  });
+}
+playBgm();
+
+/* ============================================================
+   启动
+   ============================================================ */
+window.addEventListener('load', () => {
+  let tries = 0;
+  const wait = () => {
+    tries++;
+    if (typeof FaceMesh !== 'undefined' && typeof Camera !== 'undefined') {
+      try { initFaceMesh(); } catch(e) { showError(e); }
+    } else if (tries < 30) {
+      setTimeout(wait, 500);
+    } else {
+      showError(new Error('MediaPipe 库加载超时，请检查网络连接后刷新。'));
+    }
+  };
+  wait();
+});
+</script>
+</body>
+</html>
