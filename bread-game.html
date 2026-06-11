@@ -225,6 +225,30 @@
   }
   #restart-btn:hover { transform: scale(1.07); }
   #restart-btn:active { transform: scale(0.96); }
+
+  /* 吃豆人动画 */
+  @keyframes pacman-chomp {
+    0%   { transform: rotate(0deg);    }
+    25%  { transform: rotate(-22deg);  }
+    50%  { transform: rotate(0deg);    }
+    75%  { transform: rotate(-22deg);  }
+    100% { transform: rotate(0deg);    }
+  }
+  @keyframes pacman-bot-chomp {
+    0%   { transform: rotate(0deg);   }
+    25%  { transform: rotate(22deg);  }
+    50%  { transform: rotate(0deg);   }
+    75%  { transform: rotate(22deg);  }
+    100% { transform: rotate(0deg);   }
+  }
+  #pacman-top {
+    transform-origin: 16px 16px;
+    animation: pacman-chomp 0.55s ease-in-out infinite;
+  }
+  #pacman-bot {
+    transform-origin: 16px 16px;
+    animation: pacman-bot-chomp 0.55s ease-in-out infinite;
+  }
   #buy-btn {
     background: linear-gradient(135deg, #e87a1a, #a84f0a);
     color: #fff;
@@ -368,7 +392,18 @@
       📷 需要摄像头权限<br>
       🏆 吃掉越多，分数越高！
     </div>
-    <button id="start-btn">开吃开吃 🍞</button>
+    <button id="start-btn">
+      <svg id="pacman-svg" viewBox="0 0 32 32" width="28" height="28" style="vertical-align:middle;margin-right:6px;">
+        <!-- 身体（扇形，缺口由clip-path控制） -->
+        <g id="pacman-body">
+          <path id="pacman-top"    d="M16,16 L16,2 A14,14 0 0,1 30,16 Z" fill="#FFE033"/>
+          <path id="pacman-bot"    d="M16,16 L30,16 A14,14 0 0,1 2,16 A14,14 0 0,1 16,2 Z" fill="#FFE033"/>
+        </g>
+        <!-- 眼睛 -->
+        <circle cx="19" cy="9" r="2" fill="#1a1a2e"/>
+      </svg>
+      开吃开吃
+    </button>
     <button id="start-mute-btn" title="静音">🔊</button>
   </div>
 
