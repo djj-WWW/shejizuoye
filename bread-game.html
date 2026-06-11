@@ -641,6 +641,30 @@ function initFaceMesh() {
     });
 }
 
+function vidNormToCanvas(nx, ny) {
+  // 将视频归一化坐标 (0..1, 0..1) 映射到 Canvas 坐标
+  // 考虑 cover 裁剪：视频在 Canvas 上 display: cover，超出部分被裁掉
+  // 这里计算 cover 偏移，让坐标和显示画面一致
+  const cw = CW(), ch = CH();
+  if (!vid.videoWidth || !vid.videoHeight) return { x: (1 - nx) * cw, y: ny * ch };
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  const canvasRatio = cw / ch, videoRatio = vw / vh;
+  let ax = nx, ay = ny;
+  if (videoRatio > canvasRatio) {
+    // 视频更宽：左右被裁
+    const sw = vh * canvasRatio;
+    const sx = (vw - sw) / 2;
+    ax = (nx * vw - sx) / sw;  // 映射到 0..1（裁剪后）
+  } else {
+    // 视频更高：上下被裁
+    const sh = vw / canvasRatio;
+    const sy = (vh - sh) / 2;
+    ay = (ny * vh - sy) / sh;  // 映射到 0..1（裁剪后）
+  }
+  // Canvas 上 x 轴镜像
+  return { x: (1 - ax) * cw, y: ay * ch };
+}
+
 function onResults(results) {
   if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
     latestMouth.open    = false;
@@ -673,20 +697,22 @@ function onResults(results) {
   latestMouth.ratio   = ratio;
   latestMouth.hasFace = true;
 
-  // 嘴中心（MediaPipe 坐标归一化 0..1，x 轴镜像处理）
+  // 嘴中心（用 cover 补偿映射）
   const midX = (up.x + lo.x) / 2;
   const midY = (up.y + lo.y) / 2;
-  latestMouth.cx = (1 - midX) * cw;
-  latestMouth.cy = midY * ch;
+  const mouthPos = vidNormToCanvas(midX, midY);
+  latestMouth.cx = mouthPos.x;
+  latestMouth.cy = mouthPos.y;
 
   // 头顶位置（landmark 10）+ 下巴（landmark 152）估算头部大小
   const top = lm[10];     // 头顶
   const chin = lm[152];   // 下巴底
   const headH = Math.abs(top.y - chin.y) * ch;
   latestMouth.headSize = headH;
-  // 帽子放在头顶上方一点（x 镜像）
-  latestMouth.headX = (1 - top.x) * cw;
-  latestMouth.headY = top.y * ch - headH * 0.6;
+  // 帽子放在头顶上方一点（用 cover 补偿映射）
+  const headPos = vidNormToCanvas(top.x, top.y);
+  latestMouth.headX = headPos.x;
+  latestMouth.headY = headPos.y - headH * 0.6;
 }
 
 /* ============================================================
@@ -704,16 +730,37 @@ function bgLoop() {
   // running 状态下由 gameLoop 接管绘制
 }
 
+function drawVideoCover(ct, cw, ch) {
+  // 用 cover 方式绘制摄像头画面，防止拉伸变形
+  if (!vid.videoWidth || !vid.videoHeight) {
+    ct.drawImage(vid, 0, 0, cw, ch);
+    return;
+  }
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  const canvasRatio = cw / ch, videoRatio = vw / vh;
+  let sx = 0, sy = 0, sw = vw, sh = vh;
+  if (videoRatio > canvasRatio) {
+    // 视频更宽：裁左右
+    sw = vh * canvasRatio;
+    sx = (vw - sw) / 2;
+  } else {
+    // 视频更高：裁上下
+    sh = vw / canvasRatio;
+    sy = (vh - sh) / 2;
+  }
+  ct.drawImage(vid, sx, sy, sw, sh, 0, 0, cw, ch);
+}
+
 function drawBgFrame() {
   const cw = CW(), ch = CH();
   ct.clearRect(0, 0, cw, ch);
 
-  // 摄像头画面（镜像）
+  // 摄像头画面（镜像 + cover 裁剪）
   if (faceMeshReady && vid.readyState >= 2) {
     ct.save();
     ct.translate(cw, 0);
     ct.scale(-1, 1);
-    ct.drawImage(vid, 0, 0, cw, ch);
+    drawVideoCover(ct, cw, ch);
     ct.restore();
   } else {
     ct.fillStyle = '#111'; ct.fillRect(0, 0, cw, ch);
@@ -928,10 +975,10 @@ function drawFrame() {
   const cw = CW(), ch = CH();
   ct.clearRect(0, 0, cw, ch);
 
-  // 1. 摄像头（镜像）
+  // 1. 摄像头（镜像 + cover 裁剪）
   if (faceMeshReady && vid.readyState >= 2) {
     ct.save(); ct.translate(cw, 0); ct.scale(-1, 1);
-    ct.drawImage(vid, 0, 0, cw, ch);
+    drawVideoCover(ct, cw, ch);
     ct.restore();
   } else {
     ct.fillStyle = '#111'; ct.fillRect(0, 0, cw, ch);
