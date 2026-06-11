@@ -813,6 +813,7 @@ function startGame() {
   $('hud-hint').style.display        = 'block';
 
   gameState = 'running';
+  lastTime = 0;
   requestAnimationFrame(gameLoop);
 }
 
@@ -884,7 +885,7 @@ function spawnBread() {
   });
 }
 
-function updateBreads() {
+function updateBreads(dt) {
   const ch = CH();
   const cw = CW();
   const now = performance.now();
@@ -903,11 +904,11 @@ function updateBreads() {
 
   for (let i = 0; i < breads.length; i++) {
     const b = breads[i];
-    b.y    += b.speed;
-    b.wobble += b.wobbleSpd;
-    b.rot  += b.rotSpd;
-    b.x    += Math.sin(b.wobble) * 0.6;
-    b.x     = Math.max(BREAD_HALF, Math.min(cw - BREAD_HALF, b.x));
+    b.y      += b.speed * dt;
+    b.wobble += b.wobbleSpd * dt;
+    b.rot    += b.rotSpd * dt;
+    b.x      += Math.sin(b.wobble) * 0.6 * dt;
+    b.x       = Math.max(BREAD_HALF, Math.min(cw - BREAD_HALF, b.x));
 
     // 张嘴碰撞检测
     if (mouthOpenNow && mouthX > 0 && mouthY > 0) {
@@ -952,10 +953,10 @@ function spawnFloatText(x, y, text) {
   floatTexts.push({ x, y, text, t: 0, vy: -2.5 });
 }
 
-function updateFloatTexts() {
+function updateFloatTexts(dt) {
   for (let i = floatTexts.length - 1; i >= 0; i--) {
     const f = floatTexts[i];
-    f.t += 0.03; f.y += f.vy; f.vy *= 0.96;
+    f.t += 0.03 * dt; f.y += f.vy * dt; f.vy *= Math.pow(0.96, dt);
     if (f.t >= 1) floatTexts.splice(i, 1);
   }
 }
@@ -977,11 +978,11 @@ function spawnParticles(x, y) {
   }
 }
 
-function updateParticles() {
+function updateParticles(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.t += 0.04; p.x += p.vx; p.y += p.vy;
-    p.vy += 0.15; p.vx *= 0.97;
+    p.t += 0.04 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 0.15 * dt; p.vx *= Math.pow(0.97, dt);
     if (p.t >= p.life) particles.splice(i, 1);
   }
 }
@@ -1149,12 +1150,15 @@ let lastTime = 0;
 
 function gameLoop(ts) {
   if (gameState !== 'running') return;
-  lastTime = lastTime || ts;
+  // 计算距上一帧的时间差（毫秒），以 1000/60≈16.67ms 为 1 单位
+  // 限制最大 dt=50ms（约 20fps），防止切换标签回来后一次跳太多
+  const dt = lastTime ? Math.min((ts - lastTime) / 16.667, 3) : 1;
+  lastTime = ts;
   frameCount++;
 
-  updateBreads();
-  updateFloatTexts();
-  updateParticles();
+  updateBreads(dt);
+  updateFloatTexts(dt);
+  updateParticles(dt);
   drawFrame();
 
   requestAnimationFrame(gameLoop);
